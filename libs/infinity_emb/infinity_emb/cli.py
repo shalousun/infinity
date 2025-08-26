@@ -270,11 +270,6 @@ if CHECK_TYPER.is_available:
             **_construct("proxy_root_path"),
             help="Proxy prefix for the application. See: https://fastapi.tiangolo.com/advanced/behind-a-proxy/",
         ),
-        log_config_file: str = typer.Option(
-            default="",
-            help="Path to uvicorn log configuration file (JSON or YAML format). If empty, uses default logging configuration.",
-            envvar="INFINITY_LOGGING_CONFIG_PATH"
-        ),
     ):
         """Infinity API ♾️  cli v2. MIT License. Copyright (c) 2023-now Michael Feil \n
         \n
@@ -351,7 +346,6 @@ if CHECK_TYPER.is_available:
             permissive_cors,
             api_key,
             proxy_root_path,
-            log_config_file,
         ) = typer_option_resolve(
             url_prefix,
             host,
@@ -362,7 +356,6 @@ if CHECK_TYPER.is_available:
             permissive_cors,
             api_key,
             proxy_root_path,
-            log_config_file,
         )
 
         app = create_server(
@@ -375,27 +368,56 @@ if CHECK_TYPER.is_available:
             api_key=api_key,
             proxy_root_path=proxy_root_path,
         )
-        uvicorn_kwargs = {
-            "app": app,
-            "host": host,
-            "port": port,
-            "http": "httptools",
-            "loop": loopname,
-        }
+        # Update logging configs
+        set_uvicorn_logging_configs()
+        uvicorn.run(
+            app,
+            host=host,
+            port=port,
+            log_level=log_level.name,
+            http="httptools",
+            loop=loopname,  # type: ignore
+        )
 
-        if log_config_file and log_config_file.strip():
-            import os
-            if os.path.exists(log_config_file):
-                uvicorn_kwargs["log_config"] = log_config_file
-                logger.info(f"Using custom log config file: {log_config_file}")
-            else:
-                logger.warning(f"Log config file not found: {log_config_file}, using default log level")
-                uvicorn_kwargs["log_level"] = log_level.name
-        else:
-            uvicorn_kwargs["log_level"] = log_level.name
+def set_uvicorn_logging_configs():
+    """Configure Uvicorn logging with environment variable overrides.
 
-        uvicorn.run(**uvicorn_kwargs)
+    Allows customization of log formats through environment variables:
+    - INFINITY_UVICORN_DEFAULT_FORMAT: Format for default logs
+    - INFINITY_UVICORN_ACCESS_FORMAT: Format for access logs
+    - INFINITY_UVICORN_DATE_FORMAT: Date format for all logs
+    """
+    from uvicorn.config import LOGGING_CONFIG
+    import os
 
+    # Define constants for environment variable names to improve maintainability
+    default_format_env = "INFINITY_UVICORN_DEFAULT_FORMAT"
+    access_format_env = "INFINITY_UVICORN_ACCESS_FORMAT"
+    date_format_env = "INFINITY_UVICORN_DATE_FORMAT"
+
+    # Default log format (can be overridden by env var)
+    default_fmt = os.getenv(
+        default_format_env,
+        "%(asctime)s %(levelprefix)s %(message)s"
+    )
+
+    # Access log format (can be overridden by env var)
+    access_fmt = os.getenv(
+        access_format_env,
+        '%(asctime)s %(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s'
+    )
+
+    # Date format for all logs (can be overridden by env var)
+    date_fmt = os.getenv(
+        date_format_env,
+        "%Y-%m-%d %H:%M:%S"
+    )
+
+    # Apply the configurations
+    LOGGING_CONFIG["formatters"]["default"]["fmt"] = default_fmt
+    LOGGING_CONFIG["formatters"]["default"]["datefmt"] = date_fmt
+    LOGGING_CONFIG["formatters"]["access"]["fmt"] = access_fmt
+    LOGGING_CONFIG["formatters"]["access"]["datefmt"] = date_fmt
 
 def cli():
     CHECK_TYPER.mark_required()
