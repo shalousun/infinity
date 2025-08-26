@@ -270,6 +270,11 @@ if CHECK_TYPER.is_available:
             **_construct("proxy_root_path"),
             help="Proxy prefix for the application. See: https://fastapi.tiangolo.com/advanced/behind-a-proxy/",
         ),
+        log_config_file: str = typer.Option(
+            default="",
+            help="Path to uvicorn log configuration file (JSON or YAML format). If empty, uses default logging configuration.",
+            envvar="INFINITY_LOGGING_CONFIG_PATH"
+        ),
     ):
         """Infinity API ♾️  cli v2. MIT License. Copyright (c) 2023-now Michael Feil \n
         \n
@@ -346,6 +351,7 @@ if CHECK_TYPER.is_available:
             permissive_cors,
             api_key,
             proxy_root_path,
+            log_config_file,
         ) = typer_option_resolve(
             url_prefix,
             host,
@@ -356,6 +362,7 @@ if CHECK_TYPER.is_available:
             permissive_cors,
             api_key,
             proxy_root_path,
+            log_config_file,
         )
 
         app = create_server(
@@ -368,15 +375,26 @@ if CHECK_TYPER.is_available:
             api_key=api_key,
             proxy_root_path=proxy_root_path,
         )
+        uvicorn_kwargs = {
+            "app": app,
+            "host": host,
+            "port": port,
+            "http": "httptools",
+            "loop": loopname,
+        }
 
-        uvicorn.run(
-            app,
-            host=host,
-            port=port,
-            log_level=log_level.name,
-            http="httptools",
-            loop=loopname,  # type: ignore
-        )
+        if log_config_file and log_config_file.strip():
+            import os
+            if os.path.exists(log_config_file):
+                uvicorn_kwargs["log_config"] = log_config_file
+                logger.info(f"Using custom log config file: {log_config_file}")
+            else:
+                logger.warning(f"Log config file not found: {log_config_file}, using default log level")
+                uvicorn_kwargs["log_level"] = log_level.name
+        else:
+            uvicorn_kwargs["log_level"] = log_level.name
+
+        uvicorn.run(**uvicorn_kwargs)
 
 
 def cli():
